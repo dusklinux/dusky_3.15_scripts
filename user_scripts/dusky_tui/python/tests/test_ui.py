@@ -212,6 +212,45 @@ class UITests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(app._action_tasks)
             self.assertFalse(app._action_procs)
 
+    async def test_notification_sound_is_reaped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            player = Path(directory) / 'player'
+            player.write_text('#!/usr/bin/env python3\n')
+            player.chmod(0o755)
+            app = app_for()
+            async with app.run_test() as pilot:
+                await self.boot(app, pilot)
+                with patch.object(ui, '_AUDIO_PLAYER_CACHE', str(player)), patch.object(ui.Path, 'exists', return_value=True):
+                    ui.DuskyTUI.play_reset_sound(app)
+                for _ in range(100):
+                    await pilot.pause(0.02)
+                    if not app._action_tasks and not app._action_cleanup_tasks:
+                        break
+                self.assertFalse(app._action_tasks)
+                self.assertFalse(app._action_cleanup_tasks)
+                self.assertFalse(app._action_procs)
+
+    async def test_notification_sound_is_stopped_on_quit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            player = Path(directory) / 'player'
+            player.write_text('#!/usr/bin/env python3\nimport time\ntime.sleep(60)\n')
+            player.chmod(0o755)
+            app = app_for()
+            async with app.run_test() as pilot:
+                await self.boot(app, pilot)
+                with patch.object(ui, '_AUDIO_PLAYER_CACHE', str(player)), patch.object(ui.Path, 'exists', return_value=True):
+                    ui.DuskyTUI.play_reset_sound(app)
+                for _ in range(100):
+                    await pilot.pause(0.02)
+                    if app._action_procs:
+                        break
+                self.assertTrue(app._action_procs)
+                processes = list(app._action_procs)
+            self.assertTrue(all(process.returncode is not None for process in processes))
+            self.assertFalse(app._action_tasks)
+            self.assertFalse(app._action_cleanup_tasks)
+            self.assertFalse(app._action_procs)
+
     async def test_sparse_tab_indices(self):
         app = app_for({3: [item()]})
         async with app.run_test() as pilot:
